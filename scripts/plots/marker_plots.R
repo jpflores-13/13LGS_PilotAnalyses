@@ -7,17 +7,21 @@
 #              with grey shading boxes grouping cell types. Heatmap shows
 #              top 10 marker genes per cluster with colored annotation bar
 #              on top. Volcano plot annotates top genes with text labels.
-# Input:       data/processed/marker_expr.rds
-#              data/processed/metadata_processed.rds
-#              data/processed/seurat_markers.rds
-#              data/processed/top10_markers.rds
-# Output:      plots/dotplot_ileum_markers.pdf
-#              plots/heatmap_top10_markers.pdf
-#              plots/volcano_markers.pdf
+#              Set input_suffix to "_denoised" for cellsweep pass plots.
+# Input:       data/processed/marker_expr<input_suffix>.rds
+#              data/processed/metadata_processed<input_suffix>.rds
+#              data/processed/seurat_markers<input_suffix>.rds
+#              data/processed/top10_markers<input_suffix>.rds
+# Output:      plots/dotplot_ileum_markers<input_suffix>.pdf
+#              plots/heatmap_top10_markers<input_suffix>.pdf
+#              plots/volcano_markers<input_suffix>.pdf
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
+
+## Input/output suffix — set to "_denoised" for cellsweep pass
+input_suffix <- "_denoised"
 
 ## Default clustering resolution
 default_resolution <- 0.5
@@ -139,10 +143,10 @@ library(here)
 
 # Load data ---------------------------------------------------------------
 
-marker_expr        <- readRDS(here("data", "processed", "marker_expr.rds"))
-metadata_processed <- readRDS(here("data", "processed", "metadata_processed.rds"))
-seurat_markers     <- readRDS(here("data", "processed", "seurat_markers.rds"))
-top10_markers      <- readRDS(here("data", "processed", "top10_markers.rds"))
+marker_expr        <- readRDS(here("data", "processed", paste0("marker_expr",        input_suffix, ".rds")))
+metadata_processed <- readRDS(here("data", "processed", paste0("metadata_processed", input_suffix, ".rds")))
+seurat_markers     <- readRDS(here("data", "processed", paste0("seurat_markers",     input_suffix, ".rds")))
+top10_markers      <- readRDS(here("data", "processed", paste0("top10_markers",      input_suffix, ".rds")))
 
 cluster_labels <- metadata_processed[[cluster_col]]
 cluster_order  <- as.character(sort(as.numeric(unique(cluster_labels))))
@@ -182,7 +186,6 @@ dot_df$cluster <- factor(dot_df$cluster, levels = cluster_order)
 dot_df$group   <- factor(dot_df$group,   levels = group_levels)
 
 ## Build grey shading rectangles for gene groups on dot plot
-## Each rectangle spans the y-range of its gene group
 group_positions <- do.call(rbind, lapply(group_levels, function(g) {
   genes_in_group <- rev(gene_order)[rev(gene_order) %in%
                                       gene_groups$gene[gene_groups$group == g]]
@@ -208,12 +211,10 @@ gene_color_map <- setNames(
 
 # Wrangle data — heatmap --------------------------------------------------
 
-## Use top 10 markers per cluster — clean diagonal pattern
-## Filter to genes present in marker_expr
-heatmap_genes <- top10_markers$gene[top10_markers$gene %in% colnames(marker_expr)]
+heatmap_genes <- seurat_markers$gene[seurat_markers$gene %in% colnames(marker_expr)]
 heatmap_genes <- unique(heatmap_genes)
 
-message("Building heatmap with ", length(heatmap_genes), " genes (top 10 per cluster)")
+message("Building heatmap with ", length(heatmap_genes), " genes (all significant markers)")
 
 ## Average expression per cluster per gene
 heatmap_df <- do.call(rbind, lapply(cluster_order, function(cl) {
@@ -238,16 +239,14 @@ heatmap_wide <- reshape(
 rownames(heatmap_wide) <- heatmap_wide$gene
 heatmap_wide$gene      <- NULL
 colnames(heatmap_wide) <- gsub("avg_expr\\.", "", colnames(heatmap_wide))
-
-## Reorder columns to match cluster_order
-heatmap_wide <- heatmap_wide[, cluster_order]
+heatmap_wide           <- heatmap_wide[, cluster_order]
 
 ## Z-score each gene across clusters
 heatmap_mat <- as.matrix(heatmap_wide)
 heatmap_z   <- t(scale(t(heatmap_mat)))
 
 ## Order genes by cluster of peak expression for diagonal pattern
-peak_cluster <- apply(heatmap_z, 1, which.max)
+peak_cluster    <- apply(heatmap_z, 1, which.max)
 gene_order_heat <- rownames(heatmap_z)[order(peak_cluster)]
 
 ## Reshape back to long for ggplot
@@ -260,7 +259,7 @@ heatmap_z_long <- data.frame(
 heatmap_z_long$gene    <- factor(heatmap_z_long$gene,    levels = gene_order_heat)
 heatmap_z_long$cluster <- factor(heatmap_z_long$cluster, levels = cluster_order)
 
-## Build colored annotation bar on top of heatmap — cell type per cluster
+## Build colored annotation bar on top of heatmap
 anno_bar <- data.frame(
   cluster   = cluster_order,
   cell_type = cluster_annotations[cluster_order],
@@ -274,7 +273,6 @@ anno_bar$y         <- 1
 # Visualization — dot plot ------------------------------------------------
 
 p_dotplot <- ggplot() +
-  ## Grey shading rectangles for gene groups
   geom_rect(
     data = group_positions,
     aes(ymin = ymin, ymax = ymax, fill = fill),
@@ -283,7 +281,6 @@ p_dotplot <- ggplot() +
     show.legend = FALSE
   ) +
   scale_fill_identity() +
-  ## Dot plot layer
   geom_point(
     data = dot_df,
     aes(x = cluster, y = gene, size = pct_express, color = avg_expr)
@@ -294,7 +291,6 @@ p_dotplot <- ggplot() +
     breaks = c(0, 25, 50, 75),
     name   = "% exp"
   ) +
-  ## Cell type group labels on the right
   geom_text(
     data = group_positions |>
       transform(
@@ -330,7 +326,6 @@ p_dotplot <- ggplot() +
 
 # Visualization — heatmap -------------------------------------------------
 
-## Annotation bar — thin strip on top colored by cell type
 p_anno <- anno_bar |>
   ggplot(aes(x = cluster, y = y, fill = cell_type)) +
   geom_tile() +
@@ -343,7 +338,6 @@ p_anno <- anno_bar |>
     legend.title    = element_text(size = 8)
   )
 
-## Main heatmap
 p_heatmap_main <- heatmap_z_long |>
   ggplot(aes(x = cluster, y = gene, fill = z_score)) +
   geom_tile(color = NA) +
@@ -365,7 +359,6 @@ p_heatmap_main <- heatmap_z_long |>
     legend.key.height = unit(0.8, "cm")
   )
 
-## Combine annotation bar + heatmap using patchwork
 library(patchwork)
 p_heatmap <- p_anno / p_heatmap_main +
   plot_layout(heights = c(0.03, 1), guides = "collect")
@@ -416,7 +409,7 @@ if (nrow(seurat_markers) > 0) {
     )
   
   ggsave(
-    filename = here("plots", "volcano_markers.pdf"),
+    filename = here("plots", paste0("volcano_markers", input_suffix, ".pdf")),
     plot     = p_volcano,
     width    = 16,
     height   = 14
@@ -431,13 +424,13 @@ if (nrow(seurat_markers) > 0) {
 # Save outputs ------------------------------------------------------------
 
 ggsave(
-  filename = here("plots", "dotplot_ileum_markers.pdf"),
+  filename = here("plots", paste0("dotplot_ileum_markers",  input_suffix, ".pdf")),
   plot     = p_dotplot,
   width    = 14,
   height   = 12
 )
 ggsave(
-  filename = here("plots", "heatmap_top10_markers.pdf"),
+  filename = here("plots", paste0("heatmap_top10_markers", input_suffix, ".pdf")),
   plot     = p_heatmap,
   width    = 12,
   height   = 14

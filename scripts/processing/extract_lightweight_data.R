@@ -2,24 +2,27 @@
 # Author:      JP Flores
 # Date:        2026-05-07
 # Project:     13LGS_PilotAnalyses
-# Description: One-time extraction script that loads the full 20 GB Seurat
-#              object and saves lightweight files needed by the plot scripts.
+# Description: One-time extraction script that loads the full Seurat object
+#              and saves lightweight files needed by the plot scripts.
 #              Extracts UMAP embeddings, per-cell metadata, and SCT expression
 #              for ALL significant marker genes plus known ileum marker genes.
 #              Run this as a SLURM job once, then iterate on visualizations
 #              interactively without ever loading the full object again.
-# Input:       data/processed/seurat_processed.rds
-#              data/processed/seurat_markers.rds
-# Output:      data/processed/umap_embeddings.rds    — UMAP coordinates
-#              data/processed/metadata_processed.rds  — per-cell metadata
-#              data/processed/marker_expr.rds         — expression matrix for
-#                                                       all marker genes +
-#                                                       known ileum markers
-# Note:        Submit as a SLURM job — loads the full 20 GB Seurat object.
+#              Set input_suffix to "_denoised" to extract from the cellsweep
+#              denoised object.
+# Input:       data/processed/seurat_processed<input_suffix>.rds
+#              data/processed/seurat_markers<input_suffix>.rds
+# Output:      data/processed/umap_embeddings<input_suffix>.rds
+#              data/processed/metadata_processed<input_suffix>.rds
+#              data/processed/marker_expr<input_suffix>.rds
+# Note:        Submit as a SLURM job — loads the full Seurat object.
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
+
+## Input/output suffix — set to "_denoised" for cellsweep pass
+input_suffix <- "_denoised"
 
 ## Known ileum marker genes for dot plot
 ## Must match gene_groups in marker_plots.R
@@ -47,13 +50,14 @@ library(Seurat)
 
 # Load data ---------------------------------------------------------------
 
-## Load full Seurat object — memory intensive, run as SLURM job
-message("Loading seurat_processed.rds...")
-seurat_processed <- readRDS(here("data", "processed", "seurat_processed.rds"))
+seurat_path  <- here("data", "processed", paste0("seurat_processed", input_suffix, ".rds"))
+markers_path <- here("data", "processed", paste0("seurat_markers", input_suffix, ".rds"))
+
+message("Loading ", basename(seurat_path), "...")
+seurat_processed <- readRDS(seurat_path)
 message("Loaded: ", ncol(seurat_processed), " cells, ", nrow(seurat_processed), " features")
 
-## Load marker gene table to get all significant marker genes
-seurat_markers <- readRDS(here("data", "processed", "seurat_markers.rds"))
+seurat_markers <- readRDS(markers_path)
 message("Loaded seurat_markers: ", nrow(seurat_markers), " marker genes")
 
 
@@ -93,21 +97,21 @@ message("Expression matrix: ", nrow(marker_expr), " cells x ", ncol(marker_expr)
 
 saveRDS(
   umap_embeddings,
-  file = here("data", "processed", "umap_embeddings.rds")
+  file = here("data", "processed", paste0("umap_embeddings", input_suffix, ".rds"))
 )
 saveRDS(
   metadata_processed,
-  file = here("data", "processed", "metadata_processed.rds")
+  file = here("data", "processed", paste0("metadata_processed", input_suffix, ".rds"))
 )
 saveRDS(
   marker_expr,
-  file = here("data", "processed", "marker_expr.rds")
+  file = here("data", "processed", paste0("marker_expr", input_suffix, ".rds"))
 )
 
 message("Lightweight extracts saved to data/processed/")
-message("  umap_embeddings.rds  — ", nrow(umap_embeddings), " cells x 2 UMAP dimensions")
-message("  metadata_processed.rds — ", nrow(metadata_processed), " cells")
-message("  marker_expr.rds      — ", nrow(marker_expr), " cells x ", ncol(marker_expr), " genes")
+message("  umap_embeddings", input_suffix, ".rds  — ", nrow(umap_embeddings), " cells x 2 UMAP dimensions")
+message("  metadata_processed", input_suffix, ".rds — ", nrow(metadata_processed), " cells")
+message("  marker_expr", input_suffix, ".rds      — ", nrow(marker_expr), " cells x ", ncol(marker_expr), " genes")
 message("Plot scripts can now be run interactively without loading the full object")
 
 

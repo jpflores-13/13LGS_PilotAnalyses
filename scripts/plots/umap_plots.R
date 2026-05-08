@@ -8,20 +8,24 @@
 #              Cell type annotations are first-pass based on top marker genes
 #              and known ileum biology — refine as needed.
 #              Style: no titles, no captions, minimal arrow axes.
-# Input:       data/processed/umap_embeddings.rds
-#              data/processed/metadata_processed.rds
-#              data/processed/elbow_df.rds
-# Output:      plots/pca_elbow_plot.pdf
-#              plots/umap_by_sample.pdf
-#              plots/umap_by_sex.pdf
-#              plots/umap_clusters.pdf
-#              plots/umap_pct_mt.pdf
-#              plots/umap_annotated.pdf
-#              plots/umap_annotated_labeled.pdf
+#              Set input_suffix to "_denoised" for cellsweep pass plots.
+# Input:       data/processed/umap_embeddings<input_suffix>.rds
+#              data/processed/metadata_processed<input_suffix>.rds
+#              data/processed/elbow_df<input_suffix>.rds
+# Output:      plots/pca_elbow_plot<input_suffix>.pdf
+#              plots/umap_by_sample<input_suffix>.pdf
+#              plots/umap_by_sex<input_suffix>.pdf
+#              plots/umap_clusters<input_suffix>.pdf
+#              plots/umap_pct_mt<input_suffix>.pdf
+#              plots/umap_annotated<input_suffix>.pdf
+#              plots/umap_annotated_labeled<input_suffix>.pdf
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
+
+## Input/output suffix — set to "_denoised" for cellsweep pass
+input_suffix <- "_denoised"
 
 ## Default clustering resolution — must match normalize_cluster.R
 default_resolution <- 0.5
@@ -89,9 +93,9 @@ library(here)
 
 # Load data ---------------------------------------------------------------
 
-umap_embeddings    <- readRDS(here("data", "processed", "umap_embeddings.rds"))
-metadata_processed <- readRDS(here("data", "processed", "metadata_processed.rds"))
-elbow_df           <- readRDS(here("data", "processed", "elbow_df.rds"))
+umap_embeddings    <- readRDS(here("data", "processed", paste0("umap_embeddings", input_suffix, ".rds")))
+metadata_processed <- readRDS(here("data", "processed", paste0("metadata_processed", input_suffix, ".rds")))
+elbow_df           <- readRDS(here("data", "processed", paste0("elbow_df", input_suffix, ".rds")))
 min_pc             <- unique(elbow_df$min_pc)
 
 
@@ -189,7 +193,7 @@ umap_theme <- theme_bw(base_size = 9) +
     legend.key.size = unit(0.4, "cm")
   )
 
-## Elbow plot — keep standard axes for readability
+## Elbow plot
 p_elbow <- elbow_df |>
   ggplot(aes(x = cumu, y = pct, label = rank, color = rank > min_pc)) +
   geom_text(size = 2.5) +
@@ -283,13 +287,13 @@ p_umap_annotated_labeled <- umap_df |>
 
 # Save outputs ------------------------------------------------------------
 
-ggsave(here("plots", "pca_elbow_plot.pdf"),        p_elbow,                 width = 7,  height = 5)
-ggsave(here("plots", "umap_by_sample.pdf"),         p_umap_sample,           width = 8,  height = 6)
-ggsave(here("plots", "umap_by_sex.pdf"),            p_umap_sex,              width = 7,  height = 6)
-ggsave(here("plots", "umap_clusters.pdf"),          p_umap_clusters,         width = 9,  height = 7)
-ggsave(here("plots", "umap_pct_mt.pdf"),            p_umap_pct_mt,           width = 7,  height = 6)
-ggsave(here("plots", "umap_annotated.pdf"),         p_umap_annotated,        width = 9,  height = 7)
-ggsave(here("plots", "umap_annotated_labeled.pdf"), p_umap_annotated_labeled, width = 10, height = 7)
+ggsave(here("plots", paste0("pca_elbow_plot",        input_suffix, ".pdf")), p_elbow,                  width = 7,  height = 5)
+ggsave(here("plots", paste0("umap_by_sample",        input_suffix, ".pdf")), p_umap_sample,            width = 8,  height = 6)
+ggsave(here("plots", paste0("umap_by_sex",           input_suffix, ".pdf")), p_umap_sex,               width = 7,  height = 6)
+ggsave(here("plots", paste0("umap_clusters",         input_suffix, ".pdf")), p_umap_clusters,          width = 9,  height = 7)
+ggsave(here("plots", paste0("umap_pct_mt",           input_suffix, ".pdf")), p_umap_pct_mt,            width = 7,  height = 6)
+ggsave(here("plots", paste0("umap_annotated",        input_suffix, ".pdf")), p_umap_annotated,         width = 9,  height = 7)
+ggsave(here("plots", paste0("umap_annotated_labeled",input_suffix, ".pdf")), p_umap_annotated_labeled, width = 10, height = 7)
 
 message("UMAP plots saved to plots/")
 

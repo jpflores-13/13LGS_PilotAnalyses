@@ -7,14 +7,22 @@
 #              (by sample and sex), UMAP, and clustering at multiple resolutions.
 #              SCTransform is run per-sample (via sctransform_per_sample.R)
 #              rather than on the merged object for memory efficiency.
-# Input:       data/processed/sct/<sample_id>_sct.rds — one per sample
-# Output:      data/processed/seurat_processed.rds
-#              data/processed/elbow_df.rds
+#              When run after cellsweep, set input_dir to sct_denoised and
+#              output_suffix to "_denoised".
+# Input:       data/processed/<input_dir>/<sample_id>_sct.rds — one per sample
+# Output:      data/processed/seurat_processed<output_suffix>.rds
+#              data/processed/elbow_df<output_suffix>.rds
 # Note:        Run after all sctransform_per_sample.R jobs have completed.
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
+
+## Input directory — switch to "sct_denoised" for denoised counts
+input_dir <- "sct_denoised"
+
+## Output suffix — appended to output filenames to avoid overwriting first pass
+output_suffix <- "_denoised"
 
 ## Harmony batch correction grouping variables
 harmony_vars <- c("orig.ident", "sex")
@@ -40,26 +48,22 @@ library(Seurat)
 
 ## Discover all per-sample SCTransform outputs from the job array
 sct_files <- list.files(
-  path       = here("data", "processed", "sct"),
+  path       = here("data", "processed", input_dir),
   pattern    = "_sct\\.rds$",
   full.names = TRUE
 )
 
 message("Found ", length(sct_files), " per-sample SCTransform objects")
 
-## Sanity check — stop early with a clear message if no files found
 if (length(sct_files) == 0) {
   stop(
-    "No SCTransform .rds files found in data/processed/sct/\n",
+    "No SCTransform .rds files found in data/processed/", input_dir, "/\n",
     "here() resolves to: ", here(), "\n",
-    "Full expected path: ", here("data", "processed", "sct")
+    "Full expected path: ", here("data", "processed", input_dir)
   )
 }
 
-## Load all per-sample objects into a list
-sct_list <- lapply(sct_files, readRDS)
-
-## Parse sample IDs from filenames for add.cell.ids
+sct_list       <- lapply(sct_files, readRDS)
 sct_sample_ids <- gsub("_sct\\.rds$", "", basename(sct_files))
 
 message("Loaded objects: ", paste(sct_sample_ids, collapse = ", "))
@@ -129,8 +133,8 @@ elbow_df <- data.frame(
 seurat_merged <- RunHarmony(
   seurat_merged,
   group.by.vars  = harmony_vars,
-  reduction      = "pca",      # input reduction
-  reduction.save = "harmony",  # output reduction name
+  reduction      = "pca",
+  reduction.save = "harmony",
   verbose        = FALSE
 )
 
@@ -163,7 +167,6 @@ for (res in cluster_resolutions) {
   message("Clustering at resolution ", res, " complete")
 }
 
-## Set default identity to the specified default resolution
 Idents(seurat_merged) <- paste0("SCT_snn_res.", default_resolution)
 
 message("Clustering complete — default resolution: ", default_resolution)
@@ -171,10 +174,16 @@ message("Clustering complete — default resolution: ", default_resolution)
 
 # Save outputs ------------------------------------------------------------
 
-saveRDS(seurat_merged, file = here("data", "processed", "seurat_processed.rds"))
-saveRDS(elbow_df,      file = here("data", "processed", "elbow_df.rds"))
+saveRDS(
+  seurat_merged,
+  file = here("data", "processed", paste0("seurat_processed", output_suffix, ".rds"))
+)
+saveRDS(
+  elbow_df,
+  file = here("data", "processed", paste0("elbow_df", output_suffix, ".rds"))
+)
 
-message("Saved seurat_processed.rds and elbow_df.rds")
+message("Saved seurat_processed", output_suffix, ".rds and elbow_df", output_suffix, ".rds")
 
 
 # Session info ------------------------------------------------------------
