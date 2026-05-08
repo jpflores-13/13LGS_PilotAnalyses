@@ -2,22 +2,20 @@
 # Author:      JP Flores
 # Date:        2026-05-07
 # Project:     13LGS_PilotAnalyses
-# Description: Takes the merged filtered Seurat object, runs SCTransform
-#              normalization, PCA with automatic PC selection, Harmony batch
-#              correction (by sample and sex), UMAP, and clustering at
-#              multiple resolutions.
-# Input:       data/processed/seurat_merged.rds
-# Output:      data/processed/seurat_processed.rds — normalized, clustered object
-#              data/processed/elbow_df.rds          — PC selection data frame
-# Note:        This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
+# Description: Merges per-sample SCTransform outputs from the SLURM job array,
+#              runs PCA with automatic PC selection, Harmony batch correction
+#              (by sample and sex), UMAP, and clustering at multiple resolutions.
+#              SCTransform is run per-sample (via sctransform_per_sample.R)
+#              rather than on the merged object for memory efficiency.
+# Input:       data/processed/sct/<sample_id>_sct.rds — one per sample
+# Output:      data/processed/seurat_processed.rds
+#              data/processed/elbow_df.rds
+# Note:       
+#              Run after all sctransform_per_sample.R jobs have completed.
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
-
-## Variables to regress out during SCTransform
-vars_to_regress <- "percent.mt"
 
 ## Harmony batch correction grouping variables
 harmony_vars <- c("orig.ident", "sex")
@@ -25,8 +23,11 @@ harmony_vars <- c("orig.ident", "sex")
 ## Clustering resolutions to test
 cluster_resolutions <- c(0.3, 0.5, 0.8)
 
-## Default resolution for downstream analysis (middle of the three)
+## Default resolution for downstream analysis
 default_resolution <- cluster_resolutions[2]
+
+## Increase future globals size limit for large merged objects
+options(future.globals.maxSize = 8000 * 1024^2)  # 8 GiB
 
 
 # Libraries ---------------------------------------------------------------
@@ -38,25 +39,40 @@ library(Seurat)
 
 # Load data ---------------------------------------------------------------
 
-## Merged filtered Seurat object from qc_filtering.R
-seurat_merged <- readRDS(here("data", "processed", "seurat_merged.rds"))
+## Discover all per-sample SCTransform outputs from the job array
+sct_files <- list.files(
+  path       = here("data", "processed", "sct"),
+  pattern    = "_sct\\.rds$",
+  full.names = TRUE
+)
+
+message("Found ", length(sct_files), " per-sample SCTransform objects")
+
+## Load all per-sample objects into a list
+sct_list <- lapply(sct_files, readRDS)
+
+## Parse sample IDs from filenames for add.cell.ids
+sct_sample_ids <- gsub("_sct\\.rds$", "", basename(sct_files))
 
 
 # Analysis ----------------------------------------------------------------
 
-## Join layers before SCTransform (required for Seurat v5 merged objects)
+## Merge all SCTransform-normalized objects into one
+## PrepSCTFindMarkers() will handle integration of SCT models downstream
+seurat_merged <- merge(
+  x            = sct_list[[1]],
+  y            = sct_list[-1],
+  add.cell.ids = sct_sample_ids
+)
+
+## Join layers after merge (required for Seurat v5)
 seurat_merged <- JoinLayers(seurat_merged)
 
-## SCTransform normalization — regresses out percent.mt
-## return.only.var.genes = FALSE retains all genes for downstream flexibility
-## Increase future globals size limit for SCTransform on large objects
-## Default 500 MiB is too small for merged multi-sample Seurat objects
-options(future.globals.maxSize = 8000 * 1024^2)  # 8 GiB
-seurat_merged <- SCTransform(
-  seurat_merged,
-  vars.to.regress       = vars_to_regress,
-  return.only.var.genes = FALSE,
-  verbose               = FALSE
+## Select variable features across samples for PCA
+## SelectIntegrationFeatures5() is the Seurat v5 way to do this post-SCT merge
+VariableFeatures(seurat_merged) <- SelectIntegrationFeatures(
+  object.list = sct_list,
+  nfeatures   = 3000
 )
 
 ## PCA on SCTransform variable features
@@ -86,9 +102,9 @@ message("Optimal number of PCs: ", min_pc)
 
 ## Save elbow plot data frame for figures script
 elbow_df <- data.frame(
-  pct  = pct_stdv,
-  cumu = cumulative,
-  rank = seq_along(pct_stdv),
+  pct    = pct_stdv,
+  cumu   = cumulative,
+  rank   = seq_along(pct_stdv),
   min_pc = min_pc
 )
 

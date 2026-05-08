@@ -9,8 +9,6 @@
 # Output:      data/processed/seurat_markers.rds   — full marker gene table
 #              data/processed/top10_markers.rds     — top 10 per cluster
 #              data/processed/cluster_markers.txt   — tab-separated marker table
-# Note:        This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
 # -------------------------------------------------------------------------
 
 

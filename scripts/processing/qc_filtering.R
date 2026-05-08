@@ -10,8 +10,6 @@
 # Output:      data/processed/seurat_merged.rds     — merged filtered object
 #              data/processed/metadata_all.rds       — unfiltered metadata
 #              data/processed/filter_summary.rds     — per-sample filter stats
-# Note:        This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
 # -------------------------------------------------------------------------
 
 

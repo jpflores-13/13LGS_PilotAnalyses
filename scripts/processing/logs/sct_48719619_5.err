@@ -1,0 +1,17 @@
+here() starts at /work/users/j/p/jpflores/projects/13LGS_PilotAnalyses
+Loading required package: SeuratObject
+Loading required package: sp
+
+Attaching package: ‘SeuratObject’
+
+The following objects are masked from ‘package:base’:
+
+    intersect, t
+
+Processing sample 5 of 8: 13LGS_sIBA_M1_1
+Error in getGlobalsAndPackages(expr, envir = envir, globals = globals) : 
+  The total size of the 19 globals exported for future expression (‘FUN()’) is 515.92 MiB. This exceeds the maximum allowed size 500.00 MiB per plan() argument 'maxSizeOfObjects'. This limit is set to protect against transfering too large objects to parallel workers by mistake, which may not be intended and could be costly. See help("future.globals.maxSize", package = "future") for how to adjust or remove the default threshold via an R option The three largest globals are ‘FUN’ (496.02 MiB of class ‘function’), ‘umi_bin’ (19.28 MiB of class ‘numeric’) and ‘data_step1’ (552.06 KiB of class ‘list’)
+Calls: SCTransform ... getGlobalsAndPackagesXApply -> getGlobalsAndPackages
+In addition: Warning message:
+replacing previous import ‘S4Arrays::makeNindexFromArrayViewport’ by ‘DelayedArray::makeNindexFromArrayViewport’ when loading ‘SummarizedExperiment’ 
+Execution halted

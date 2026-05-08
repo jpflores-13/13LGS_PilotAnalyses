@@ -14,8 +14,6 @@
 # Note:        Requires Python with cellsweep installed: pip install cellsweep
 #              Configure reticulate to point at the correct Python environment
 #              before running: reticulate::use_virtualenv() or use_condaenv()
-#              This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
 # -------------------------------------------------------------------------
 
 
