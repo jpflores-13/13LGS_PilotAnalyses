@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=13lgs_cluster
+#SBATCH --job-name=normalize_cluster
 #SBATCH --time=08:00:00
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=8

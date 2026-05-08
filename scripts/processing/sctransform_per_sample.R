@@ -1,16 +1,15 @@
 # SCTransform Per Sample --------------------------------------------------
 # Author:      JP Flores
-# Date:        2026-05-07
+# Date:        2026-05-08
 # Project:     13LGS_PilotAnalyses
-# Description: Runs SCTransform on a single sample. Designed to be called
-#              by a SLURM job array, one job per sample. The SLURM_ARRAY_TASK_ID
-#              environment variable is used to select which sample to process.
-#              Much more memory efficient than running SCTransform on the full
-#              merged object.
-# Input:       data/processed/seurat_merged.rds
-# Output:      data/processed/sct/<sample_id>_sct.rds — one per sample
+# Description: Runs SCTransform on a single doublet-cleaned sample. Designed
+#              to be called by a SLURM job array, one job per sample. Reads
+#              cleaned singlet objects from doublet_removal.R rather than the
+#              raw merged object. Run after all doublet_removal.R jobs finish.
+# Input:       data/processed/doublets/<sample_id>_clean.rds
+# Output:      data/processed/sct/<sample_id>_sct.rds
 # Note:        This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
+#              Submit as a SLURM job array after doublet_removal.R completes.
 # -------------------------------------------------------------------------
 
 
@@ -33,26 +32,28 @@ library(Seurat)
 # Load data ---------------------------------------------------------------
 
 ## Get SLURM array task ID to determine which sample to process
-## When run locally (not via SLURM), defaults to 1 for testing
 task_id <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID", unset = "1"))
 
-## Load merged object to extract sample list and IDs
-seurat_merged <- readRDS(here("data", "processed", "seurat_merged.rds"))
+## Get ordered sample IDs from the doublets directory
+clean_files <- list.files(
+  path       = here("data", "processed", "doublets"),
+  pattern    = "_clean\\.rds$",
+  full.names = TRUE
+)
+sample_ids <- gsub("_clean\\.rds$", "", basename(clean_files))
+sample_id  <- sample_ids[task_id]
 
-## Get ordered sample IDs from the merged object
-sample_ids <- unique(seurat_merged$orig.ident)
+message("Processing SCTransform for sample ", task_id, " of ", length(sample_ids), ": ", sample_id)
 
-## Select the sample for this job
-sample_id <- sample_ids[task_id]
-message("Processing sample ", task_id, " of ", length(sample_ids), ": ", sample_id)
+## Load doublet-cleaned object
+seurat_obj <- readRDS(clean_files[task_id])
 
-## Subset to just this sample
-seurat_obj <- subset(seurat_merged, subset = orig.ident == sample_id)
+message("  Cells after doublet removal: ", ncol(seurat_obj))
 
 
 # Analysis ----------------------------------------------------------------
 
-## Run SCTransform on this single sample
+## Run SCTransform on this single cleaned sample
 ## Much more memory efficient than running on the full merged object
 seurat_obj <- SCTransform(
   seurat_obj,
@@ -60,6 +61,8 @@ seurat_obj <- SCTransform(
   return.only.var.genes = FALSE,
   verbose               = FALSE
 )
+
+message("  SCTransform complete")
 
 
 # Save outputs ------------------------------------------------------------
@@ -72,7 +75,7 @@ saveRDS(
   file = here("data", "processed", "sct", paste0(sample_id, "_sct.rds"))
 )
 
-message("Done: ", sample_id)
+message("Saved: ", sample_id, "_sct.rds")
 
 
 # Session info ------------------------------------------------------------

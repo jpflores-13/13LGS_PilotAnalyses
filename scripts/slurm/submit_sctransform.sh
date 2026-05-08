@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=13lgs_sct
+#SBATCH --job-name=sctransform_per_sample
 #SBATCH --time=04:00:00
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=4

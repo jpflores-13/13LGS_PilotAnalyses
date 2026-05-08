@@ -1,166 +1,262 @@
-# QC Filtering ------------------------------------------------------------
+# QC Plots ----------------------------------------------------------------
 # Author:      JP Flores
-# Date:        2026-05-07
+# Date:        2026-05-08
 # Project:     13LGS_PilotAnalyses
-# Description: Loads Cell Ranger .h5 files for all 8 13LGS ileum samples
-#              (4 male, 4 female), computes per-cell percent mitochondrial
-#              reads using the Ensembl 113 EnsDb (SpeTri2.0), filters
-#              low-quality cells, and merges into a single Seurat object.
-# Input:       data/        — Cell Ranger filtered_feature_bc_matrix.h5 files
-# Output:      data/processed/seurat_merged.rds     — merged filtered object
-#              data/processed/metadata_all.rds       — unfiltered metadata
-#              data/processed/filter_summary.rds     — per-sample filter stats
+# Description: Generates QC plots from pre- and post-filtering metadata.
+#              Produces a faceted percent.mt histogram, a stacked bar plot
+#              showing cells retained vs removed, and violin plots for key
+#              QC metrics (nFeature_RNA, nCount_RNA, percent.mt, doublet
+#              score) per sample colored by sex.
+# Input:       data/processed/metadata_all.rds
+#              data/processed/filter_summary.rds
+#              data/processed/metadata_processed.rds  — for post-filter violins
+# Output:      plots/qc_mito_histogram.pdf
+#              plots/qc_filter_summary.pdf
+#              plots/qc_violin_prefilter.pdf
+#              plots/qc_violin_postfilter.pdf
+#              plots/qc_violin_doublets.pdf
 # -------------------------------------------------------------------------
 
 
 # Parameters --------------------------------------------------------------
 
-## AnnotationHub ID for Ensembl 113 EnsDb (Ictidomys tridecemlineatus, SpeTri2.0)
-ensdb_id     <- "AH119327"
-
-## Seurat object creation thresholds
-min_cells    <- 3
+## MT cutoff used in qc_filtering.R
+mt_cutoff    <- 5
 min_features <- 200
-
-## QC filtering thresholds
-## mt_cutoff based on Scavuzzo et al. 2023 (doi: 10.1101/2023.06.07.544052)
-mt_cutoff    <- 5     # maximum percent mitochondrial reads
-nfeature_min <- 200   # minimum genes per cell (empty droplet filter)
-nfeature_max <- 5000  # maximum genes per cell (doublet filter)
+max_features <- 5000
 
 
 # Libraries ---------------------------------------------------------------
 
-library(AnnotationHub)
-library(ensembldb)
-library(GenomicFeatures)
+library(ggplot2)
 library(here)
-library(Seurat)
 
 
 # Load data ---------------------------------------------------------------
 
-## Connect to AnnotationHub and retrieve Ensembl 113 EnsDb for 13LGS
-ah  <- AnnotationHub()
-edb <- ah[[ensdb_id]]
+metadata_all       <- readRDS(here("data", "processed", "metadata_all.rds"))
+filter_summary     <- readRDS(here("data", "processed", "filter_summary.rds"))
+metadata_processed <- readRDS(here("data", "processed", "metadata_processed.rds"))
 
-## Confirm genome build and organism
-organism(edb)
-genome(edb)
 
-## Pull MT gene names — done once, reused for all samples
-## 13LGS MT genes use bare gene symbols (ND1, COX1, etc.) with no mt- prefix,
-## so we cannot use pattern = "^mt-" as we would for human/mouse
-mt_genes      <- genes(edb, filter = SeqNameFilter("MT"))
+# Shared theme ------------------------------------------------------------
 
-## Keep only named genes — drops unannotated tRNAs/rRNAs with empty gene_name
-## tRNAs/rRNAs are not polyadenylated and are largely not captured by 10x
-mt_gene_names <- mt_genes$gene_name[mt_genes$gene_name != ""]
+qc_theme <- theme_bw(base_size = 9) +
+  theme(
+    plot.title      = element_blank(),
+    plot.caption    = element_blank(),
+    axis.text.x     = element_text(angle = 45, hjust = 1, size = 7),
+    axis.text.y     = element_text(size = 7),
+    legend.key.size = unit(0.4, "cm"),
+    panel.grid      = element_line(color = "grey95")
+  )
 
-## Discover all .h5 files in the data/ directory automatically
-h5_files <- list.files(
-  path       = here("data", "raw"),
-  pattern    = "\\.h5$",
-  full.names = TRUE,
+sex_colors <- c("Female" = "hotpink3", "Male" = "steelblue")
+
+
+# Visualization — MT histogram --------------------------------------------
+
+p_hist <- metadata_all |>
+  ggplot(aes(x = percent.mt, fill = sex)) +
+  geom_histogram(binwidth = 0.5, color = "grey40") +
+  scale_fill_manual(values = sex_colors) +
+  geom_vline(
+    xintercept = mt_cutoff,
+    color      = "firebrick",
+    linetype   = "dashed",
+    linewidth  = 0.8
+  ) +
+  annotate(
+    geom  = "text",
+    x     = mt_cutoff + 0.3,
+    y     = Inf,
+    label = paste0(mt_cutoff, "% cutoff"),
+    color = "firebrick",
+    hjust = 0,
+    vjust = 2,
+    size  = 2.5
+  ) +
+  facet_wrap(~ sample_id, ncol = 4) +
+  labs(x = "% Mitochondrial Reads", y = "# of Cells", fill = "Sex") +
+  qc_theme
+
+
+# Visualization — filter summary bar plot ---------------------------------
+
+filter_summary_long <- reshape(
+  filter_summary,
+  varying   = c("Kept", "Removed"),
+  v.names   = "n_cells",
+  timevar   = "status",
+  times     = c("Kept", "Removed"),
+  direction = "long"
 )
 
-## Parse sample IDs and sex from filenames
-## e.g. "13LGS_sIBA_F1_1_filtered_feature_bc_matrix.h5" -> "13LGS_sIBA_F1_1"
-sample_ids <- gsub("_filtered_feature_bc_matrix\\.h5$", "", basename(h5_files))
-
-
-# Analysis ----------------------------------------------------------------
-
-## Initialize empty lists for per-sample objects and metadata
-seurat_list   <- list()
-metadata_list <- list()
-
-for (i in seq_along(h5_files)) {
-  
-  sample_id <- sample_ids[i]
-  message("Processing: ", sample_id)
-  
-  ## Load Cell Ranger filtered feature-barcode matrix
-  counts <- Read10X_h5(h5_files[i])
-  
-  ## Build Seurat object
-  seurat_obj <- CreateSeuratObject(
-    counts       = counts,
-    project      = sample_id,
-    min.cells    = min_cells,
-    min.features = min_features
-  )
-  
-  ## Add sex metadata parsed from sample ID
-  seurat_obj$sex <- ifelse(grepl("_F", sample_id), "Female", "Male")
-  
-  ## Compute percent mitochondrial reads per cell
-  ## features = used instead of pattern = because 13LGS MT genes lack mt- prefix
-  seurat_obj <- PercentageFeatureSet(
-    seurat_obj,
-    features = mt_gene_names[mt_gene_names %in% rownames(seurat_obj)],
-    col.name = "percent.mt"
-  )
-  
-  ## Save unfiltered metadata BEFORE filtering for QC plots
-  metadata_list[[sample_id]] <- seurat_obj@meta.data |>
-    transform(
-      sample_id = sample_id,
-      sex       = ifelse(grepl("_F", sample_id), "Female", "Male")
+p_filter <- filter_summary_long |>
+  ggplot(aes(x = sample_id, y = n_cells, fill = interaction(status, sex))) +
+  geom_col() +
+  geom_text(
+    data = filter_summary,
+    aes(
+      x     = sample_id,
+      y     = Kept + Removed,
+      label = paste0(pct_removed, "% removed"),
+      fill  = NULL
+    ),
+    vjust = -0.5,
+    size  = 2.5,
+    color = "grey30"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Kept.Female"    = "hotpink3",
+      "Removed.Female" = "pink1",
+      "Kept.Male"      = "steelblue",
+      "Removed.Male"   = "lightblue"
+    ),
+    labels = c(
+      "Kept.Female"    = "Female - Kept",
+      "Removed.Female" = "Female - Removed",
+      "Kept.Male"      = "Male - Kept",
+      "Removed.Male"   = "Male - Removed"
     )
+  ) +
+  labs(x = "Sample", y = "# of Cells", fill = NULL) +
+  qc_theme
+
+
+# Visualization — pre-filter violin plots ---------------------------------
+
+## nFeature_RNA — genes detected per cell
+p_vln_features <- metadata_all |>
+  ggplot(aes(x = sample_id, y = nFeature_RNA, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  geom_hline(
+    yintercept = c(min_features, max_features),
+    color      = "firebrick",
+    linetype   = "dashed",
+    linewidth  = 0.5
+  ) +
+  scale_fill_manual(values = sex_colors) +
+  labs(x = NULL, y = "Genes per cell", fill = "Sex") +
+  qc_theme
+
+## nCount_RNA — UMIs per cell
+p_vln_counts <- metadata_all |>
+  ggplot(aes(x = sample_id, y = nCount_RNA, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  scale_fill_manual(values = sex_colors) +
+  scale_y_log10() +
+  labs(x = NULL, y = "UMIs per cell (log10)", fill = "Sex") +
+  qc_theme
+
+## percent.mt — mitochondrial reads
+p_vln_mt <- metadata_all |>
+  ggplot(aes(x = sample_id, y = percent.mt, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  geom_hline(
+    yintercept = mt_cutoff,
+    color      = "firebrick",
+    linetype   = "dashed",
+    linewidth  = 0.5
+  ) +
+  scale_fill_manual(values = sex_colors) +
+  labs(x = NULL, y = "% Mitochondrial Reads", fill = "Sex") +
+  qc_theme
+
+## Combine pre-filter violins with patchwork
+library(patchwork)
+p_vln_prefilter <- (p_vln_features / p_vln_counts / p_vln_mt) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right")
+
+
+# Visualization — post-filter violin plots --------------------------------
+
+## nFeature_RNA after filtering
+p_vln_features_post <- metadata_processed |>
+  ggplot(aes(x = orig.ident, y = nFeature_RNA, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  scale_fill_manual(values = sex_colors) +
+  labs(x = NULL, y = "Genes per cell", fill = "Sex") +
+  qc_theme
+
+## nCount_RNA after filtering
+p_vln_counts_post <- metadata_processed |>
+  ggplot(aes(x = orig.ident, y = nCount_RNA, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  scale_fill_manual(values = sex_colors) +
+  scale_y_log10() +
+  labs(x = NULL, y = "UMIs per cell (log10)", fill = "Sex") +
+  qc_theme
+
+## percent.mt after filtering
+p_vln_mt_post <- metadata_processed |>
+  ggplot(aes(x = orig.ident, y = percent.mt, fill = sex)) +
+  geom_violin(scale = "width", linewidth = 0.3) +
+  scale_fill_manual(values = sex_colors) +
+  labs(x = NULL, y = "% Mitochondrial Reads", fill = "Sex") +
+  qc_theme
+
+## Combine post-filter violins
+p_vln_postfilter <- (p_vln_features_post / p_vln_counts_post / p_vln_mt_post) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "right")
+
+
+# Visualization — doublet score violin ------------------------------------
+
+## Only plot if doublet_score column exists in metadata
+if ("doublet_score" %in% colnames(metadata_processed)) {
   
-  ## Filter low-quality cells
-  ## - percent.mt < mt_cutoff      : removes damaged/dying cells
-  ## - nFeature_RNA > nfeature_min : removes empty droplets
-  ## - nFeature_RNA < nfeature_max : removes likely doublets
-  seurat_obj <- subset(
-    seurat_obj,
-    subset = percent.mt   <  mt_cutoff    &
-      nFeature_RNA >  nfeature_min &
-      nFeature_RNA <  nfeature_max
+  p_vln_doublets <- metadata_processed |>
+    ggplot(aes(x = orig.ident, y = doublet_score, fill = sex)) +
+    geom_violin(scale = "width", linewidth = 0.3) +
+    scale_fill_manual(values = sex_colors) +
+    labs(x = "Sample", y = "Doublet Score (scDblFinder)", fill = "Sex") +
+    qc_theme
+  
+  ggsave(
+    filename = here("plots", "qc_violin_doublets.pdf"),
+    plot     = p_vln_doublets,
+    width    = 10,
+    height   = 4
   )
+  message("Doublet score violin saved")
   
-  seurat_list[[sample_id]] <- seurat_obj
-  
-  message(
-    sample_id, ": ",
-    nrow(metadata_list[[sample_id]]), " cells before filtering, ",
-    ncol(seurat_obj), " after"
-  )
-  
+} else {
+  message("doublet_score not found in metadata — skipping doublet violin")
 }
-
-## Merge all filtered Seurat objects into one combined object
-## add.cell.ids prefixes barcodes with sample ID to avoid collisions
-seurat_merged <- merge(
-  x            = seurat_list[[1]],
-  y            = seurat_list[-1],
-  add.cell.ids = sample_ids
-)
-
-## Combine unfiltered metadata for QC plotting
-metadata_all <- do.call(rbind, metadata_list)
-
-## Build per-sample filtering summary
-filter_summary <- do.call(rbind, lapply(sample_ids, function(sid) {
-  n_before  <- nrow(metadata_list[[sid]])
-  n_after   <- ncol(seurat_list[[sid]])
-  n_removed <- n_before - n_after
-  data.frame(
-    sample_id   = sid,
-    sex         = ifelse(grepl("_F", sid), "Female", "Male"),
-    Kept        = n_after,
-    Removed     = n_removed,
-    pct_removed = round(n_removed / n_before * 100, 1)
-  )
-}))
 
 
 # Save outputs ------------------------------------------------------------
 
-saveRDS(seurat_merged,  file = here("data", "processed", "seurat_merged.rds"))
-saveRDS(metadata_all,   file = here("data", "processed", "metadata_all.rds"))
-saveRDS(filter_summary, file = here("data", "processed", "filter_summary.rds"))
+ggsave(
+  filename = here("plots", "qc_mito_histogram.pdf"),
+  plot     = p_hist,
+  width    = 14,
+  height   = 6
+)
+ggsave(
+  filename = here("plots", "qc_filter_summary.pdf"),
+  plot     = p_filter,
+  width    = 10,
+  height   = 6
+)
+ggsave(
+  filename = here("plots", "qc_violin_prefilter.pdf"),
+  plot     = p_vln_prefilter,
+  width    = 12,
+  height   = 10
+)
+ggsave(
+  filename = here("plots", "qc_violin_postfilter.pdf"),
+  plot     = p_vln_postfilter,
+  width    = 12,
+  height   = 10
+)
+
+message("QC plots saved to plots/")
 
 
 # Session info ------------------------------------------------------------

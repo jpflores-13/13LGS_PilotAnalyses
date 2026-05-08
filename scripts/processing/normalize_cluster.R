@@ -10,8 +10,7 @@
 # Input:       data/processed/sct/<sample_id>_sct.rds — one per sample
 # Output:      data/processed/seurat_processed.rds
 #              data/processed/elbow_df.rds
-# Note:       
-#              Run after all sctransform_per_sample.R jobs have completed.
+# Note:        Run after all sctransform_per_sample.R jobs have completed.
 # -------------------------------------------------------------------------
 
 
@@ -48,32 +47,47 @@ sct_files <- list.files(
 
 message("Found ", length(sct_files), " per-sample SCTransform objects")
 
+## Sanity check — stop early with a clear message if no files found
+if (length(sct_files) == 0) {
+  stop(
+    "No SCTransform .rds files found in data/processed/sct/\n",
+    "here() resolves to: ", here(), "\n",
+    "Full expected path: ", here("data", "processed", "sct")
+  )
+}
+
 ## Load all per-sample objects into a list
 sct_list <- lapply(sct_files, readRDS)
 
 ## Parse sample IDs from filenames for add.cell.ids
 sct_sample_ids <- gsub("_sct\\.rds$", "", basename(sct_files))
 
+message("Loaded objects: ", paste(sct_sample_ids, collapse = ", "))
+
 
 # Analysis ----------------------------------------------------------------
 
 ## Merge all SCTransform-normalized objects into one
-## PrepSCTFindMarkers() will handle integration of SCT models downstream
 seurat_merged <- merge(
   x            = sct_list[[1]],
   y            = sct_list[-1],
   add.cell.ids = sct_sample_ids
 )
 
-## Join layers after merge (required for Seurat v5)
-seurat_merged <- JoinLayers(seurat_merged)
+message("Merged object: ", ncol(seurat_merged), " cells, ", nrow(seurat_merged), " features")
+
+## Join layers after merge on RNA assay only
+## SCT assay does not support JoinLayers in this per-sample SCTransform workflow
+seurat_merged <- JoinLayers(seurat_merged, assay = "RNA")
 
 ## Select variable features across samples for PCA
-## SelectIntegrationFeatures5() is the Seurat v5 way to do this post-SCT merge
+## Uses consensus variable features across all per-sample SCTransform models
 VariableFeatures(seurat_merged) <- SelectIntegrationFeatures(
   object.list = sct_list,
   nfeatures   = 3000
 )
+
+message("Selected ", length(VariableFeatures(seurat_merged)), " variable features")
 
 ## PCA on SCTransform variable features
 seurat_merged <- RunPCA(
@@ -81,6 +95,8 @@ seurat_merged <- RunPCA(
   features = VariableFeatures(seurat_merged),
   verbose  = FALSE
 )
+
+message("PCA complete")
 
 ## Automatic PC selection (Scavuzzo et al. 2023 approach)
 ## co1: first PC where cumulative variance > 90% AND per-PC variance < 5%
@@ -109,12 +125,16 @@ elbow_df <- data.frame(
 )
 
 ## Harmony batch correction — corrects for sample and sex effects
+## Updated for Harmony2 API — assay.use replaced with reduction/reduction.save
 seurat_merged <- RunHarmony(
   seurat_merged,
-  group.by.vars = harmony_vars,
-  assay.use     = "SCT",
-  verbose       = FALSE
+  group.by.vars  = harmony_vars,
+  reduction      = "pca",      # input reduction
+  reduction.save = "harmony",  # output reduction name
+  verbose        = FALSE
 )
+
+message("Harmony complete")
 
 ## UMAP and neighbor graph using Harmony-corrected embeddings
 seurat_merged <- RunUMAP(
@@ -123,6 +143,8 @@ seurat_merged <- RunUMAP(
   dims      = 1:min_pc,
   verbose   = FALSE
 )
+
+message("UMAP complete")
 
 seurat_merged <- FindNeighbors(
   seurat_merged,
@@ -144,11 +166,15 @@ for (res in cluster_resolutions) {
 ## Set default identity to the specified default resolution
 Idents(seurat_merged) <- paste0("SCT_snn_res.", default_resolution)
 
+message("Clustering complete — default resolution: ", default_resolution)
+
 
 # Save outputs ------------------------------------------------------------
 
 saveRDS(seurat_merged, file = here("data", "processed", "seurat_processed.rds"))
 saveRDS(elbow_df,      file = here("data", "processed", "elbow_df.rds"))
+
+message("Saved seurat_processed.rds and elbow_df.rds")
 
 
 # Session info ------------------------------------------------------------

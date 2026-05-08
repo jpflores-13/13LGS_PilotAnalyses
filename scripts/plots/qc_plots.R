@@ -1,17 +1,16 @@
-# QC Figures --------------------------------------------------------------
+# QC Plots ----------------------------------------------------------------
 # Author:      JP Flores
 # Date:        2026-05-07
 # Project:     13LGS_PilotAnalyses
-# Description: Generates QC figures from the pre-filtering metadata and
+# Description: Generates QC plots from the pre-filtering metadata and
 #              per-sample filtering summary. Produces a faceted percent.mt
 #              histogram and a stacked bar plot showing cells retained vs
-#              removed after QC filtering.
+#              removed after QC filtering. Loads only lightweight .rds objects
+#              so this script can be run interactively without memory issues.
 # Input:       data/processed/metadata_all.rds
 #              data/processed/filter_summary.rds
 # Output:      plots/qc_mito_histogram.pdf
 #              plots/qc_filter_summary.pdf
-# Note:        This project uses renv for reproducibility.
-#              Run renv::restore() before executing this script.
 # -------------------------------------------------------------------------
 
 
@@ -29,10 +28,8 @@ library(here)
 
 # Load data ---------------------------------------------------------------
 
-## Unfiltered per-cell metadata from qc_filtering.R
+## Lightweight metadata objects — no Seurat object needed for these plots
 metadata_all   <- readRDS(here("data", "processed", "metadata_all.rds"))
-
-## Per-sample filtering summary from qc_filtering.R
 filter_summary <- readRDS(here("data", "processed", "filter_summary.rds"))
 
 
@@ -132,6 +129,8 @@ ggsave(
   width    = 10,
   height   = 6
 )
+
+message("QC plots saved to plots/")
 
 
 # Session info ------------------------------------------------------------
