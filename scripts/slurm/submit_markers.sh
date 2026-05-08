@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=marker_genes
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mem=128G
 #SBATCH --cpus-per-task=8
 #SBATCH --output=logs/marker_genes_%j.out
