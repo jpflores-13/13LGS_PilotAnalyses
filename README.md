@@ -25,22 +25,22 @@ for cell type annotation, followed by ambient RNA denoising with CellSweep.
 2. **`scripts/processing/doublet_removal.R`** — Per-sample doublet removal (SLURM array)
 3. **`scripts/processing/sctransform_per_sample.R`** — Per-sample SCTransform normalization (SLURM array; `input_dir: "doublets"`, `output_dir: "sct"`)
 4. **`scripts/processing/normalize_cluster.R`** — Merge, PCA, Harmony batch correction, UMAP, and clustering (`input_dir: "sct"`, `output_suffix: ""`)
-5. **`scripts/analysis/marker_genes.R`** — FindAllMarkers per cluster (SLURM job; `input_suffix: ""`)
+5. **`scripts/analysis/marker_genes.R`** — `FindAllMarkers` per cluster (SLURM job; `input_suffix: ""`)
 6. **`scripts/processing/extract_lightweight_data.R`** — Extract UMAP embeddings, metadata, and marker expression from full Seurat object (SLURM job; `input_suffix: ""`)
 
-### CellSweep Denoising
+### `cellsweep` Denoising
 
-7. **`scripts/processing/cellsweep_prep.R`** — Export per-sample raw counts and first-pass cell type labels for CellSweep
-8. **`scripts/processing/cellsweep_convert.py`** — Convert per-sample MTX files to AnnData `.h5ad` (SLURM array)
-9. **`scripts/processing/cellsweep_run.py`** — Run CellSweep ambient RNA denoising (SLURM array)
-10. **`scripts/processing/cellsweep_reload.R`** — Inject denoised counts back into per-sample Seurat objects (SLURM job)
+7. **`scripts/processing/cellsweep_prep.R`** — Export per-sample raw counts and first-pass cell type labels for `cellsweep`
+8. **`scripts/processing/cellsweep_convert.py`** — Convert per-sample MTX files to `AnnData` `.h5ad` (SLURM array)
+9. **`scripts/processing/cellsweep_run.py`** — Run `cellsweep` ambient RNA denoising (SLURM array)
+10. **`scripts/processing/cellsweep_reload.R`** — Inject denoised counts back into per-sample `Seurat` objects (SLURM job)
 
 ### Second Pass — Denoised Clustering and Visualization
 
 11. **`scripts/processing/sctransform_per_sample.R`** — Re-run SCTransform on denoised counts (SLURM array; `input_dir: "cellsweep_clean"`, `output_dir: "sct_denoised"`)
 12. **`scripts/processing/normalize_cluster.R`** — Re-run PCA, Harmony, UMAP, and clustering on denoised data (`input_dir: "sct_denoised"`, `output_suffix: "_denoised"`)
-13. **`scripts/analysis/marker_genes.R`** — FindAllMarkers on denoised clusters (SLURM job; `input_suffix: "_denoised"`)
-14. **`scripts/processing/extract_lightweight_data.R`** — Extract lightweight files from denoised Seurat object (SLURM job; `input_suffix: "_denoised"`)
+13. **`scripts/analysis/marker_genes.R`** — `FindAllMarkers` on denoised clusters (SLURM job; `input_suffix: "_denoised"`)
+14. **`scripts/processing/extract_lightweight_data.R`** — Extract lightweight files from denoised `Seurat` object (SLURM job; `input_suffix: "_denoised"`)
 
 ### Visualization
 
